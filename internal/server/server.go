@@ -7,6 +7,11 @@ import (
 	"os"
 )
 
+var (
+	broadcast = make(chan string)
+	clients   = make(map[net.Conn]bool)
+)
+
 func main() {
 	listen, err := net.Listen("tcp", "localhost:8080")
 	if err != nil {
@@ -16,23 +21,39 @@ func main() {
 	defer listen.Close()
 
 	fmt.Println("server is listening on port 8080")
-
+	go handleBroadcast()
+	// accept the clients to communicate
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
 			fmt.Println("error:", err)
 			return
 		}
-
+		clients[conn] = true
 		fmt.Println("client connected:", conn.RemoteAddr())
 		go handleClient(conn)
+	}
+}
+
+func handleBroadcast() {
+	for {
+		msg := <-broadcast
+
+		for conn := range clients {
+			_, err := conn.Write([]byte(msg))
+			if err != nil {
+				conn.Close()
+				delete(clients, conn)
+				return
+			}
+		}
 	}
 }
 
 func handleClient(conn net.Conn) {
 	defer conn.Close()
 
-	// 1) goroutine: continuously read from client
+	// continuously read from client
 	go func() {
 		buffer := make([]byte, 1024)
 		for {
@@ -45,7 +66,8 @@ func handleClient(conn net.Conn) {
 		}
 	}()
 
-	// 2) main part: read from server terminal (stdin) and send to client
+	// read from server terminal (stdin) and send to client
+	// it read line by line so we have to collect it in text variable and
 	stdin := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("Server: ")
@@ -54,10 +76,6 @@ func handleClient(conn net.Conn) {
 			return
 		}
 		text := stdin.Text() + "\n"
-		_, err := conn.Write([]byte(text))
-		if err != nil {
-			fmt.Println("write error:", err)
-			return
-		}
+		broadcast <- text
 	}
 }

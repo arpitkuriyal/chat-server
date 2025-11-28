@@ -1,5 +1,7 @@
 .env
 
+chat-server
+
 TODO.md
 *logs
 *logs/*

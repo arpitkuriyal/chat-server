@@ -2,13 +2,33 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
-	"net"
 	"os"
 )
 
 func main() {
-	conn, err := net.Dial("tcp", "localhost:8080")
+	// load the CA cert so client trusts your server cert
+	caCert, err := os.ReadFile("certs/ca.crt")
+	if err != nil {
+		fmt.Println("failed to read ca cert")
+	}
+
+	// Create a certificate pool (trust store, empty bag) that will hold our trusted CA certificate. The client will use this pool to verify the server's TLS certificate.
+	caPool := x509.NewCertPool()
+
+	// Add our custom CA certificate (ca.crt) into caPool.
+	if !caPool.AppendCertsFromPEM(caCert) {
+		fmt.Println("failed to add CA cert to pool")
+		return
+	}
+
+	tlsConfig := &tls.Config{
+		RootCAs:    caPool,      // tells the client which certificate authority to trust
+		ServerName: "localhost", // must match server certifiate's SAN
+	}
+	conn, err := tls.Dial("tcp", "localhost:8080", tlsConfig)
 	if err != nil {
 		fmt.Println("Error connecting:", err)
 		return

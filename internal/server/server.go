@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
@@ -13,7 +14,18 @@ var (
 )
 
 func main() {
-	listen, err := net.Listen("tcp", "localhost:8080")
+	// it loads the publlic certificate and private key. It prove that i am the real server.
+	cert, err := tls.LoadX509KeyPair("certs/server.crt", "certs/server.key")
+	if err != nil {
+		println("failed to load server key pair", err)
+		return
+	}
+
+	// store the certificate so `tls.listen()` uses it during handshake
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+	listen, err := tls.Listen("tcp", "localhost:8080", tlsConfig)
 	if err != nil {
 		fmt.Println("Error in server main:", err)
 		return

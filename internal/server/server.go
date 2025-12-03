@@ -3,13 +3,19 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 )
 
+type Message struct {
+	From string `json:"from"`
+	Text string `json:"text"`
+}
+
 var (
-	broadcast = make(chan string)
+	broadcast = make(chan Message)
 	clients   = make(map[net.Conn]bool)
 )
 
@@ -52,8 +58,9 @@ func handleBroadcast() {
 		msg := <-broadcast
 
 		for conn := range clients {
-			_, err := conn.Write([]byte(msg))
-			if err != nil {
+			// why this here give
+			enc := json.NewEncoder((conn))
+			if err := enc.Encode(msg); err != nil {
 				conn.Close()
 				delete(clients, conn)
 				return
@@ -62,19 +69,30 @@ func handleBroadcast() {
 	}
 }
 
+// this function read from client and show to server
 func handleClient(conn net.Conn) {
 	defer conn.Close()
 
+	// why
+	dec := json.NewDecoder(conn)
+
 	// continuously read from client
 	go func() {
-		buffer := make([]byte, 1024)
 		for {
-			n, err := conn.Read(buffer)
+			var msg Message
+
+			// why
+			err := dec.Decode(&msg)
 			if err != nil {
-				fmt.Println("read error:", err)
+				fmt.Println("Client disconnected:", err)
+				conn.Close()
+				delete(clients, conn)
 				return
 			}
-			fmt.Print("Client: ", string(buffer[:n]))
+
+			fmt.Printf("Client [%s]: %s\n: ", msg.From, msg.Text)
+
+			broadcast <- msg
 		}
 	}()
 
@@ -87,7 +105,10 @@ func handleClient(conn net.Conn) {
 			fmt.Println("server stdin closed")
 			return
 		}
-		text := stdin.Text() + "\n"
-		broadcast <- text
+		msg := Message{
+			From: "SERVER",
+			Text: stdin.Text(),
+		}
+		broadcast <- msg
 	}
 }

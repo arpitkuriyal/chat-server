@@ -4,9 +4,15 @@ import (
 	"bufio"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"os"
 )
+
+type Message struct {
+	From string `json:"from"`
+	Text string `json:"text"`
+}
 
 func main() {
 	// load the CA cert so client trusts your server cert
@@ -24,6 +30,7 @@ func main() {
 		return
 	}
 
+	// tls.Config is the “brain” of the TLS connection. It tells Go how to perform the TLS handshake and what security rules to use. Different for both client and server as they have different purpose to verify during handshake
 	tlsConfig := &tls.Config{
 		RootCAs:    caPool,      // tells the client which certificate authority to trust
 		ServerName: "localhost", // must match server certifiate's SAN
@@ -37,32 +44,42 @@ func main() {
 
 	fmt.Println("connected to server")
 
+	enc := json.NewEncoder(conn) // why
+	dec := json.NewDecoder(conn) //why
+
+	stdin := bufio.NewScanner(os.Stdin)
+	fmt.Println("Enter your username:")
+	stdin.Scan()
+	username := stdin.Text()
+
 	// 1) goroutine: read from server
 	go func() {
-		buffer := make([]byte, 1024)
 		for {
-			n, err := conn.Read(buffer)
-			if err != nil {
-				fmt.Println("read error from server:", err)
+			var msg Message
+			if err := dec.Decode(&msg); err != nil {
+				fmt.Println("server disconnected", err)
 				return
 			}
-			fmt.Print("Server: ", string(buffer[:n]))
+
+			fmt.Printf("\n[%s] %s\n", msg.From, msg.Text)
 		}
 	}()
 
 	// 2) main goroutine: read from stdin and send to server
-	stdin := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("You: ")
 		if !stdin.Scan() {
 			fmt.Println("stdin closed")
 			return
 		}
-		text := stdin.Text() + "\n"
 
-		_, err := conn.Write([]byte(text))
-		if err != nil {
-			fmt.Println("write error to server:", err)
+		msg := Message{
+			From: username,
+			Text: stdin.Text(),
+		}
+
+		if err := enc.Encode(msg); err != nil {
+			fmt.Println("send error", err)
 			return
 		}
 	}

@@ -7,3 +7,7 @@ TODO.md
 *logs/*
 
 steps.txt
+
+certs/*.key
+certs/*.csr
+certs/*.srl

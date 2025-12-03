@@ -59,7 +59,7 @@ func handleBroadcast() {
 
 		for conn := range clients {
 			// why this here give
-			enc := json.NewEncoder((conn))
+			enc := json.NewEncoder(conn)
 			if err := enc.Encode(msg); err != nil {
 				conn.Close()
 				delete(clients, conn)

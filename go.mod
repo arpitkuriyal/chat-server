@@ -1,4 +1,4 @@
-module chat-server
+module github.com/arpitkuriyal/chat-server
 
 go 1.25.1
 

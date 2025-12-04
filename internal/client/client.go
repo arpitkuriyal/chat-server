@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"bufio"
@@ -7,14 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/arpitkuriyal/chat-server/internal/common"
 )
 
-type Message struct {
-	From string `json:"from"`
-	Text string `json:"text"`
-}
-
-func main() {
+func RunClient() {
 	// load the CA cert so client trusts your server cert
 	caCert, err := os.ReadFile("certs/ca.crt")
 	if err != nil {
@@ -55,7 +52,7 @@ func main() {
 	// 1) goroutine: read from server as all message will first come to server that broadcast to all clients
 	go func() {
 		for {
-			var msg Message
+			var msg common.Message
 			if err := dec.Decode(&msg); err != nil {
 				fmt.Println("server disconnected")
 				return
@@ -73,12 +70,12 @@ func main() {
 			return
 		}
 
-		msg := Message{
+		msg := common.Message{
 			From: username,
 			Text: stdin.Text(),
 		}
 
-		if err := enc.Encode(&msg); err != nil {
+		if err := enc.Encode(msg); err != nil {
 			fmt.Println("send error", err)
 			return
 		}

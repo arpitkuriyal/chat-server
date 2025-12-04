@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bufio"
@@ -7,19 +7,16 @@ import (
 	"fmt"
 	"net"
 	"os"
+
+	"github.com/arpitkuriyal/chat-server/internal/common"
 )
 
-type Message struct {
-	From string `json:"from"`
-	Text string `json:"text"`
-}
-
 var (
-	broadcast = make(chan Message)
+	broadcast = make(chan common.Message)
 	clients   = make(map[net.Conn]bool)
 )
 
-func main() {
+func RunServer() {
 	// it loads the publlic certificate and private key. It prove that i am the real server.
 	cert, err := tls.LoadX509KeyPair("certs/server.crt", "certs/server.key")
 	if err != nil {
@@ -42,6 +39,7 @@ func main() {
 
 	// when message come send to all client simaltaneously.
 	go handleBroadcast()
+	go readFromServerStdin()
 
 	// accept the clients to communicate
 	for {
@@ -77,28 +75,27 @@ func handleClient(conn net.Conn) {
 	defer conn.Close()
 	dec := json.NewDecoder(conn)
 
-	// continuously read from client
-	go func() {
-		for {
-			var msg Message
+	// read from client
+	for {
+		var msg common.Message
 
-			// make the JSON data in go struct and store it in msg
-			err := dec.Decode(&msg)
-			if err != nil {
-				fmt.Println("Client disconnected:", err)
-				conn.Close()
-				delete(clients, conn)
-				return
-			}
-
-			// first server sees the messagae after that we broadcast it to all client thats why `broadcast <- msg` is after this.
-			fmt.Printf("Client [%s]: %s\n: ", msg.From, msg.Text)
-
-			broadcast <- msg
+		// make the JSON data in go struct and store it in msg
+		err := dec.Decode(&msg)
+		if err != nil {
+			fmt.Println("Client disconnected:", err)
+			conn.Close()
+			delete(clients, conn)
+			return
 		}
-	}()
 
-	// read from server terminal (stdin) and send to client
+		// first server sees the messagae after that we broadcast it to all client thats why `broadcast <- msg` is after this.
+		fmt.Printf("Client [%s]: %s\n: ", msg.From, msg.Text)
+
+		broadcast <- msg
+	}
+}
+
+func readFromServerStdin() {
 	stdin := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("Server: ")
@@ -106,12 +103,13 @@ func handleClient(conn net.Conn) {
 			fmt.Println("server stdin closed")
 			return
 		}
-		msg := Message{
+
+		msg := common.Message{
 			From: "SERVER",
 			Text: stdin.Text(),
 		}
 
-		// broadcast to all the client
+		// broadcast to all the clients
 		broadcast <- msg
 	}
 }

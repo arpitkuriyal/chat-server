@@ -44,20 +44,20 @@ func main() {
 
 	fmt.Println("connected to server")
 
-	enc := json.NewEncoder(conn) // why
-	dec := json.NewDecoder(conn) //why
+	enc := json.NewEncoder(conn)
+	dec := json.NewDecoder(conn)
 
 	stdin := bufio.NewScanner(os.Stdin)
 	fmt.Println("Enter your username:")
 	stdin.Scan()
 	username := stdin.Text()
 
-	// 1) goroutine: read from server
+	// 1) goroutine: read from server as all message will first come to server that broadcast to all clients
 	go func() {
 		for {
 			var msg Message
 			if err := dec.Decode(&msg); err != nil {
-				fmt.Println("server disconnected", err)
+				fmt.Println("server disconnected")
 				return
 			}
 
@@ -78,7 +78,7 @@ func main() {
 			Text: stdin.Text(),
 		}
 
-		if err := enc.Encode(msg); err != nil {
+		if err := enc.Encode(&msg); err != nil {
 			fmt.Println("send error", err)
 			return
 		}

@@ -39,7 +39,10 @@ func main() {
 	defer listen.Close()
 
 	fmt.Println("server is listening on port 8080")
+
+	// when message come send to all client simaltaneously.
 	go handleBroadcast()
+
 	// accept the clients to communicate
 	for {
 		conn, err := listen.Accept()
@@ -53,12 +56,12 @@ func main() {
 	}
 }
 
+// broadcast message to all cilents
 func handleBroadcast() {
 	for {
 		msg := <-broadcast
 
 		for conn := range clients {
-			// why this here give
 			enc := json.NewEncoder(conn)
 			if err := enc.Encode(msg); err != nil {
 				conn.Close()
@@ -69,11 +72,9 @@ func handleBroadcast() {
 	}
 }
 
-// this function read from client and show to server
+// this function is call every time new client send message.
 func handleClient(conn net.Conn) {
 	defer conn.Close()
-
-	// why
 	dec := json.NewDecoder(conn)
 
 	// continuously read from client
@@ -81,7 +82,7 @@ func handleClient(conn net.Conn) {
 		for {
 			var msg Message
 
-			// why
+			// make the JSON data in go struct and store it in msg
 			err := dec.Decode(&msg)
 			if err != nil {
 				fmt.Println("Client disconnected:", err)
@@ -90,6 +91,7 @@ func handleClient(conn net.Conn) {
 				return
 			}
 
+			// first server sees the messagae after that we broadcast it to all client thats why `broadcast <- msg` is after this.
 			fmt.Printf("Client [%s]: %s\n: ", msg.From, msg.Text)
 
 			broadcast <- msg
@@ -97,7 +99,6 @@ func handleClient(conn net.Conn) {
 	}()
 
 	// read from server terminal (stdin) and send to client
-	// it read line by line so we have to collect it in text variable and
 	stdin := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("Server: ")
@@ -109,6 +110,8 @@ func handleClient(conn net.Conn) {
 			From: "SERVER",
 			Text: stdin.Text(),
 		}
+
+		// broadcast to all the client
 		broadcast <- msg
 	}
 }

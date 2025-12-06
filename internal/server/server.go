@@ -46,7 +46,6 @@ func RunServer() {
 			return
 		}
 		clients[conn] = true
-		fmt.Println("client connected:", conn.RemoteAddr())
 		go handleClient(conn)
 	}
 }
@@ -82,7 +81,7 @@ func handleClient(conn net.Conn) {
 			fmt.Println("Client disconnected:", err)
 			conn.Close()
 			delete(clients, conn)
-			return
+			continue
 		}
 
 		broadcast <- msg

@@ -6,25 +6,46 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
+	"strings"
 
 	"github.com/arpitkuriyal/chat-server/internal/common"
 )
 
-func RunClient() {
+type Client struct {
+	Conn     net.Conn
+	Enc      *json.Encoder
+	Dec      *json.Decoder
+	Username string
+	IsHost   bool
+}
+
+// Run connects to the server, builds a Client, then hands off to the TUI.
+func Run(addr string, isHost bool) {
+	client, err := NewClient(addr, isHost)
+	if err != nil {
+		fmt.Println("client error:", err)
+		return
+	}
+	defer client.Conn.Close()
+
+	if err := StartTUI(client); err != nil {
+		fmt.Println("tui error:", err)
+	}
+}
+
+func NewClient(addr string, isHost bool) (*Client, error) {
 	// load the CA cert so client trusts your server cert
 	caCert, err := os.ReadFile("certs/ca.crt")
 	if err != nil {
-		fmt.Println("failed to read ca cert")
+		return nil, fmt.Errorf("failed to read ca cert: %w", err)
 	}
 
 	// Create a certificate pool (trust store, empty bag) that will hold our trusted CA certificate. The client will use this pool to verify the server's TLS certificate.
 	caPool := x509.NewCertPool()
-
-	// Add our custom CA certificate (ca.crt) into caPool.
 	if !caPool.AppendCertsFromPEM(caCert) {
-		fmt.Println("failed to add CA cert to pool")
-		return
+		return nil, fmt.Errorf("failed to add CA cert to pool")
 	}
 
 	// tls.Config is the “brain” of the TLS connection. It tells Go how to perform the TLS handshake and what security rules to use. Different for both client and server as they have different purpose to verify during handshake
@@ -34,50 +55,38 @@ func RunClient() {
 	}
 	conn, err := tls.Dial("tcp", "localhost:8080", tlsConfig)
 	if err != nil {
-		fmt.Println("Error connecting:", err)
-		return
+		return nil, fmt.Errorf("error connecting: %w", err)
 	}
-	defer conn.Close()
-
-	fmt.Println("connected to server")
 
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(conn)
 
+	// ask username in plain terminal (before TUI takes over)
 	stdin := bufio.NewScanner(os.Stdin)
-	fmt.Println("Enter your username:")
+	fmt.Print("Enter your username: ")
 	stdin.Scan()
-	username := stdin.Text()
-
-	// 1) goroutine: read from server as all message will first come to server that broadcast to all clients
-	go func() {
-		for {
-			var msg common.Message
-			if err := dec.Decode(&msg); err != nil {
-				fmt.Println("server disconnected")
-				return
-			}
-
-			fmt.Printf("\n[%s] %s\n", msg.From, msg.Text)
-		}
-	}()
-
-	// 2) main goroutine: read from stdin and send to server
-	for {
-		fmt.Print("You: ")
-		if !stdin.Scan() {
-			fmt.Println("stdin closed")
-			return
-		}
-
-		msg := common.Message{
-			From: username,
-			Text: stdin.Text(),
-		}
-
-		if err := enc.Encode(msg); err != nil {
-			fmt.Println("send error", err)
-			return
-		}
+	username := strings.TrimSpace(stdin.Text())
+	if username == "" {
+		username = "anon"
 	}
+	if isHost {
+		username = username + " (host)"
+	}
+
+	return &Client{
+		Conn:     conn,
+		Enc:      enc,
+		Dec:      dec,
+		Username: username,
+		IsHost:   isHost,
+	}, nil
+}
+
+// helper so TUI code can send messages easily
+func (c *Client) SendMessage(text string) error {
+	msg := common.Message{
+		From: c.Username,
+		Text: text,
+	}
+	return c.Enc.Encode(msg)
 }

@@ -16,8 +16,9 @@ func main() {
 
 	if *host {
 		fmt.Println("Starting server on", *addr)
-		go server.RunServer()
-
+		ready := make(chan bool)
+		go server.RunServer(ready)
+		<-ready // waiting until server is ready
 		// small delay so server starts listening
 		time.Sleep(300 * time.Millisecond)
 

@@ -14,7 +14,7 @@ var (
 	clients   = make(map[net.Conn]bool)
 )
 
-func RunServer() {
+func RunServer(ready chan<- bool) {
 	// it loads the publlic certificate and private key. It prove that i am the real server.
 	cert, err := tls.LoadX509KeyPair("certs/server.crt", "certs/server.key")
 	if err != nil {
@@ -34,7 +34,7 @@ func RunServer() {
 	defer listen.Close()
 
 	fmt.Println("server is listening on port 8080")
-
+	ready <- true
 	// when message come send to all client simaltaneously.
 	go handleBroadcast()
 

@@ -1,12 +1,10 @@
 package server
 
 import (
-	"bufio"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 
 	"github.com/arpitkuriyal/chat-server/internal/common"
 )
@@ -39,7 +37,6 @@ func RunServer() {
 
 	// when message come send to all client simaltaneously.
 	go handleBroadcast()
-	go readFromServerStdin()
 
 	// accept the clients to communicate
 	for {
@@ -88,28 +85,6 @@ func handleClient(conn net.Conn) {
 			return
 		}
 
-		// first server sees the messagae after that we broadcast it to all client thats why `broadcast <- msg` is after this.
-		fmt.Printf("Client [%s]: %s\n: ", msg.From, msg.Text)
-
-		broadcast <- msg
-	}
-}
-
-func readFromServerStdin() {
-	stdin := bufio.NewScanner(os.Stdin)
-	for {
-		fmt.Print("Server: ")
-		if !stdin.Scan() {
-			fmt.Println("server stdin closed")
-			return
-		}
-
-		msg := common.Message{
-			From: "SERVER",
-			Text: stdin.Text(),
-		}
-
-		// broadcast to all the clients
 		broadcast <- msg
 	}
 }

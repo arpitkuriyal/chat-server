@@ -12,14 +12,22 @@ import (
 
 type Server struct {
 	broadcast chan common.Message
-	clients   map[net.Conn]bool
+	clients   map[string]*Client
 	mu        sync.Mutex
+}
+
+type Client struct {
+	Conn     net.Conn
+	Enc      *json.Encoder
+	Dec      *json.Decoder
+	Username string
+	IsHost   bool
 }
 
 func NewSever() *Server {
 	return &Server{
 		broadcast: make(chan common.Message),
-		clients:   make(map[net.Conn]bool),
+		clients:   make(map[string]*Client),
 		mu:        sync.Mutex{},
 	}
 }
@@ -55,23 +63,21 @@ func (s *Server) RunServer(ready chan<- bool) {
 			fmt.Println("error:", err)
 			return
 		}
-		s.clients[conn] = true
 		go s.handleClient(conn)
 	}
 }
 
 // broadcast message to all cilents
 func (s *Server) handleBroadcast() {
-	for {
-		msg := <-s.broadcast
-
-		for conn := range s.clients {
-			enc := json.NewEncoder(conn)
-			if err := enc.Encode(msg); err != nil {
-				conn.Close()
-				delete(s.clients, conn)
+	for msg := range s.broadcast {
+		s.mu.Lock()
+		for username, client := range s.clients {
+			if err := client.Enc.Encode(msg); err != nil {
+				client.Conn.Close()
+				delete(s.clients, username)
 				return
 			}
+			s.mu.Unlock()
 		}
 	}
 }

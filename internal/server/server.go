@@ -75,41 +75,58 @@ func (s *Server) handleBroadcast() {
 			if err := client.Enc.Encode(msg); err != nil {
 				client.Conn.Close()
 				delete(s.clients, username)
-				return
 			}
-			s.mu.Unlock()
 		}
+		s.mu.Unlock()
 	}
 }
 
 // this function is call every time new client send message.
 func (s *Server) handleClient(conn net.Conn) {
+	dec := json.NewDecoder(conn)
+	enc := json.NewEncoder(conn)
+
+	var firstMessage common.Message
+	if err := dec.Decode(&firstMessage); err != nil {
+		conn.Close()
+		return
+	}
+	username := firstMessage.From
+
+	client := &Client{
+		Enc:      enc,
+		Dec:      dec,
+		Username: username,
+		Conn:     conn,
+	}
+	s.mu.Lock()
+	s.clients[username] = client
+	s.mu.Unlock()
+
+	s.broadcast <- common.Message{
+		From: "system",
+		Text: fmt.Sprintf("%s joined chat", username),
+	}
+
+	// clean up on disconnect
 	defer func() {
 		s.mu.Lock()
-		delete(s.clients, conn)
+		delete(s.clients, username)
 		s.mu.Unlock()
 		conn.Close()
+		s.broadcast <- common.Message{
+			From: "system",
+			Text: fmt.Sprintf("%s left the chat", username),
+		}
 	}()
-
-	dec := json.NewDecoder(conn)
 
 	for {
 		var msg common.Message
 		if err := dec.Decode(&msg); err != nil {
-			// client disconnected unexpectedly
-			s.broadcast <- common.Message{
-				From: "system",
-				Text: fmt.Sprintf("%s left the chat", msg.From),
-			}
 			return
 		}
 
-		// handle /exit command
 		if msg.Text == "/exit" {
-			s.broadcast <- common.Message{
-				From: "system",
-				Text: fmt.Sprintf("%s left the chat", msg.From),
-			}
 			return
 		}
 

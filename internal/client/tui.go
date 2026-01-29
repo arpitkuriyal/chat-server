@@ -16,10 +16,7 @@ func StartTUI(c *Client) error {
 	// chat window
 	messages := tview.NewTextView().
 		SetDynamicColors(true).
-		SetScrollable(true).
-		SetChangedFunc(func() {
-			app.Draw()
-		})
+		SetScrollable(true)
 
 	title := " Chat-Server "
 	if c.IsHost {
@@ -33,38 +30,46 @@ func StartTUI(c *Client) error {
 		SetFieldWidth(0)
 
 	input.SetDoneFunc(func(key tcell.Key) {
-		if key == tcell.KeyEnter {
-			text := strings.TrimSpace(input.GetText())
-			if text == "" {
-				return
-			}
-
-			// later you can parse commands here if c.IsHost (like /kick user)
-			if err := c.SendMessage(text); err != nil {
-				app.QueueUpdateDraw(func() {
-					fmt.Fprintf(messages, "[red]send error: %v\n", err)
-				})
-				app.Stop()
-				return
-			}
-
-			input.SetText("")
+		if key != tcell.KeyEnter {
+			return
 		}
+
+		text := strings.TrimSpace(input.GetText())
+		if text == "" {
+			return
+		}
+
+		if err := c.SendMessage(text); err != nil {
+			app.QueueUpdateDraw(func() {
+				fmt.Fprintf(messages, "[red]send error: %v\n", err)
+			})
+			app.Stop()
+			return
+		}
+
+		input.SetText("")
 	})
 
-	// layout: messages on top, input at bottom
+	// layout
 	layout := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(messages, 0, 1, false).
 		AddItem(input, 3, 0, true)
 
-	// goroutine: read messages from server
+	// 🔑 START THE UI EVENT LOOP FIRST
+	go func() {
+		if err := app.SetRoot(layout, true).EnableMouse(true).Run(); err != nil {
+			panic(err)
+		}
+	}()
+
+	// 🔑 NOW start reading messages from the server
 	go func() {
 		for {
 			var msg common.Message
 			if err := c.Dec.Decode(&msg); err != nil {
 				app.QueueUpdateDraw(func() {
-					fmt.Fprintf(messages, "\n[red]server disconnected: %v\n", err)
+					fmt.Fprintf(messages, "\n[red]server disconnected\n")
 				})
 				return
 			}
@@ -75,6 +80,6 @@ func StartTUI(c *Client) error {
 		}
 	}()
 
-	// run the TUI
-	return app.SetRoot(layout, true).EnableMouse(true).Run()
+	// block forever (tview owns the lifecycle now)
+	select {}
 }

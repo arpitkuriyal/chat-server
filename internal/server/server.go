@@ -5,17 +5,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"sync"
 
 	"github.com/arpitkuriyal/chat-server/internal/common"
 )
 
-var (
-	broadcast = make(chan common.Message)
-	clients   = make(map[net.Conn]bool)
-)
+type Server struct {
+	broadcast chan common.Message
+	clients   map[net.Conn]bool
+	mu        sync.Mutex
+}
 
-func RunServer(ready chan<- bool) {
-	// it loads the publlic certificate and private key. It prove that i am the real server.
+func NewSever() *Server {
+	return &Server{
+		broadcast: make(chan common.Message),
+		clients:   make(map[net.Conn]bool),
+		mu:        sync.Mutex{},
+	}
+}
+
+func (s *Server) RunServer(ready chan<- bool) {
+	// it loads the public certificate and private key. It prove that i am the real server.
 	cert, err := tls.LoadX509KeyPair("certs/server.crt", "certs/server.key")
 	if err != nil {
 		println("failed to load server key pair", err)
@@ -36,7 +46,7 @@ func RunServer(ready chan<- bool) {
 	fmt.Println("server is listening on port 8080")
 	ready <- true
 	// when message come send to all client simaltaneously.
-	go handleBroadcast()
+	go s.handleBroadcast()
 
 	// accept the clients to communicate
 	for {
@@ -45,21 +55,21 @@ func RunServer(ready chan<- bool) {
 			fmt.Println("error:", err)
 			return
 		}
-		clients[conn] = true
-		go handleClient(conn)
+		s.clients[conn] = true
+		go s.handleClient(conn)
 	}
 }
 
 // broadcast message to all cilents
-func handleBroadcast() {
+func (s *Server) handleBroadcast() {
 	for {
-		msg := <-broadcast
+		msg := <-s.broadcast
 
-		for conn := range clients {
+		for conn := range s.clients {
 			enc := json.NewEncoder(conn)
 			if err := enc.Encode(msg); err != nil {
 				conn.Close()
-				delete(clients, conn)
+				delete(s.clients, conn)
 				return
 			}
 		}
@@ -67,23 +77,36 @@ func handleBroadcast() {
 }
 
 // this function is call every time new client send message.
-func handleClient(conn net.Conn) {
-	defer conn.Close()
+func (s *Server) handleClient(conn net.Conn) {
+	defer func() {
+		s.mu.Lock()
+		delete(s.clients, conn)
+		s.mu.Unlock()
+		conn.Close()
+	}()
+
 	dec := json.NewDecoder(conn)
 
-	// read from client
 	for {
 		var msg common.Message
-
-		// make the JSON data in go struct and store it in msg
-		err := dec.Decode(&msg)
-		if err != nil {
-			fmt.Println("Client disconnected:", err)
-			conn.Close()
-			delete(clients, conn)
-			continue
+		if err := dec.Decode(&msg); err != nil {
+			// client disconnected unexpectedly
+			s.broadcast <- common.Message{
+				From: "system",
+				Text: fmt.Sprintf("%s left the chat", msg.From),
+			}
+			return
 		}
 
-		broadcast <- msg
+		// handle /exit command
+		if msg.Text == "/exit" {
+			s.broadcast <- common.Message{
+				From: "system",
+				Text: fmt.Sprintf("%s left the chat", msg.From),
+			}
+			return
+		}
+
+		s.broadcast <- msg
 	}
 }

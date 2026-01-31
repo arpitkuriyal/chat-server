@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"time"
 
 	"github.com/arpitkuriyal/chat-server/internal/client"
 	"github.com/arpitkuriyal/chat-server/internal/server"
@@ -20,8 +19,6 @@ func main() {
 		srv := server.NewSever()
 		go srv.RunServer(ready)
 		<-ready // waiting until server is ready
-		// small delay so server starts listening
-		time.Sleep(300 * time.Millisecond)
 
 		fmt.Println("Starting host client...")
 		client.Run(*addr, true)

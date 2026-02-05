@@ -39,6 +39,13 @@ func StartTUI(c *Client) error {
 			return
 		}
 
+		// exit command
+		if text == "/exit" {
+			_ = c.SendMessage(text)
+			app.Stop()
+			return
+		}
+
 		if err := c.SendMessage(text); err != nil {
 			app.QueueUpdateDraw(func() {
 				fmt.Fprintf(messages, "[red]send error: %v\n", err)
@@ -56,14 +63,7 @@ func StartTUI(c *Client) error {
 		AddItem(messages, 0, 1, false).
 		AddItem(input, 3, 0, true)
 
-	// 🔑 START THE UI EVENT LOOP FIRST
-	go func() {
-		if err := app.SetRoot(layout, true).EnableMouse(true).Run(); err != nil {
-			panic(err)
-		}
-	}()
-
-	// 🔑 NOW start reading messages from the server
+	// read messages from server
 	go func() {
 		for {
 			var msg common.Message
@@ -71,6 +71,7 @@ func StartTUI(c *Client) error {
 				app.QueueUpdateDraw(func() {
 					fmt.Fprintf(messages, "\n[red]server disconnected\n")
 				})
+				app.Stop() // stop UI on disconnect
 				return
 			}
 
@@ -80,6 +81,8 @@ func StartTUI(c *Client) error {
 		}
 	}()
 
-	// block forever (tview owns the lifecycle now)
-	select {}
+	// single Run call, owns lifecycle
+	return app.SetRoot(layout, true).
+		EnableMouse(true).
+		Run()
 }

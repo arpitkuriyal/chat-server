@@ -17,7 +17,7 @@ func main() {
 		fmt.Println("Starting server on", *addr)
 		ready := make(chan bool)
 		srv := server.NewSever()
-		go srv.RunServer(ready)
+		go srv.RunServer(*addr, ready)
 		<-ready // waiting until server is ready
 
 		fmt.Println("Starting host client...")

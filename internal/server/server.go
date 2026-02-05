@@ -12,11 +12,11 @@ import (
 
 type Server struct {
 	broadcast chan common.Message
-	clients   map[string]*Client
+	clients   map[string]*Peer
 	mu        sync.Mutex
 }
 
-type Client struct {
+type Peer struct {
 	Conn     net.Conn
 	Enc      *json.Encoder
 	Dec      *json.Decoder
@@ -27,12 +27,12 @@ type Client struct {
 func NewSever() *Server {
 	return &Server{
 		broadcast: make(chan common.Message),
-		clients:   make(map[string]*Client),
+		clients:   make(map[string]*Peer),
 		mu:        sync.Mutex{},
 	}
 }
 
-func (s *Server) RunServer(ready chan<- bool) {
+func (s *Server) RunServer(addr string, ready chan<- bool) {
 	// it loads the public certificate and private key. It prove that i am the real server.
 	cert, err := tls.LoadX509KeyPair("certs/server.crt", "certs/server.key")
 	if err != nil {
@@ -44,7 +44,7 @@ func (s *Server) RunServer(ready chan<- bool) {
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 	}
-	listen, err := tls.Listen("tcp", "localhost:8080", tlsConfig)
+	listen, err := tls.Listen("tcp", addr, tlsConfig)
 	if err != nil {
 		fmt.Println("Error in server main:", err)
 		return
@@ -93,7 +93,7 @@ func (s *Server) handleClient(conn net.Conn) {
 	}
 	username := firstMessage.From
 
-	client := &Client{
+	client := &Peer{
 		Enc:      enc,
 		Dec:      dec,
 		Username: username,

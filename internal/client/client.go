@@ -48,12 +48,16 @@ func NewClient(addr string, isHost bool) (*Client, error) {
 		return nil, fmt.Errorf("failed to add CA cert to pool")
 	}
 
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid addr: %w", err)
+	}
 	// tls.Config is the “brain” of the TLS connection. It tells Go how to perform the TLS handshake and what security rules to use. Different for both client and server as they have different purpose to verify during handshake
 	tlsConfig := &tls.Config{
-		RootCAs:    caPool,      // tells the client which certificate authority to trust
-		ServerName: "localhost", // must match server certifiate's SAN
+		RootCAs:    caPool, // tells the client which certificate authority to trust
+		ServerName: host,   // must match server certifiate's SAN
 	}
-	conn, err := tls.Dial("tcp", "localhost:8080", tlsConfig)
+	conn, err := tls.Dial("tcp", addr, tlsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting: %w", err)
 	}
@@ -76,6 +80,7 @@ func NewClient(addr string, isHost bool) (*Client, error) {
 	// do it for the first message "X joined the chat"
 	handshake := common.Message{
 		From:   username,
+		Text:   "joined the chat",
 		IsHost: isHost,
 	}
 

@@ -26,7 +26,7 @@ type Peer struct {
 
 func NewSever() *Server {
 	return &Server{
-		broadcast: make(chan common.Message),
+		broadcast: make(chan common.Message, 100), // why buffer channel
 		clients:   make(map[string]*Peer),
 		mu:        sync.Mutex{},
 	}
@@ -99,6 +99,7 @@ func (s *Server) handleClient(conn net.Conn) {
 		Username: username,
 		Conn:     conn,
 	}
+
 	s.mu.Lock()
 	s.clients[username] = client
 	s.mu.Unlock()

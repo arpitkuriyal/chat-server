@@ -79,9 +79,8 @@ func NewClient(addr string, isHost bool) (*Client, error) {
 
 	// do it for the first message "X joined the chat"
 	handshake := common.Message{
-		From:   username,
-		Text:   "joined the chat",
-		IsHost: isHost,
+		From: username,
+		Text: "joined the chat",
 	}
 
 	if err := enc.Encode(handshake); err != nil {

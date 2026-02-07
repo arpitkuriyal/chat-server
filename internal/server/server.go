@@ -71,11 +71,8 @@ func (s *Server) RunServer(addr string, ready chan<- bool) {
 func (s *Server) handleBroadcast() {
 	for msg := range s.broadcast {
 		s.mu.Lock()
-		for username, client := range s.clients {
-			if err := client.Enc.Encode(msg); err != nil {
-				client.Conn.Close()
-				delete(s.clients, username)
-			}
+		for _, client := range s.clients {
+			_ = client.Enc.Encode(msg)
 		}
 		s.mu.Unlock()
 	}
@@ -86,27 +83,61 @@ func (s *Server) handleClient(conn net.Conn) {
 	dec := json.NewDecoder(conn)
 	enc := json.NewEncoder(conn)
 
-	var firstMessage common.Message
-	if err := dec.Decode(&firstMessage); err != nil {
-		conn.Close()
-		return
+	var client *Peer
+	var username string
+
+	// retry join loop
+	for {
+		var joinReq common.Message
+		if err := dec.Decode(&joinReq); err != nil {
+			conn.Close()
+			return
+		}
+
+		if joinReq.Type != "join" {
+			continue
+		}
+
+		username = joinReq.From
+
+		s.mu.Lock()
+		if _, exists := s.clients[username]; exists {
+			_ = enc.Encode(common.Message{
+				Type: "join-reject",
+				Text: "username already taken, try another",
+			})
+			s.mu.Unlock()
+			continue
+		}
+
+		// accept
+		client = &Peer{
+			Conn:     conn,
+			Enc:      enc,
+			Dec:      dec,
+			Username: username,
+			IsHost:   joinReq.IsHost,
+		}
+
+		s.clients[username] = client
+		s.mu.Unlock()
+
+		_ = enc.Encode(common.Message{
+			Type: "join-accept",
+		})
+		break
 	}
-	username := firstMessage.From
 
-	client := &Peer{
-		Enc:      enc,
-		Dec:      dec,
-		Username: username,
-		Conn:     conn,
-	}
-
-	s.mu.Lock()
-	s.clients[username] = client
-	s.mu.Unlock()
-
-	s.broadcast <- common.Message{
-		From: "system",
-		Text: fmt.Sprintf("%s joined chat", username),
+	if client.IsHost {
+		s.broadcast <- common.Message{
+			Type: "system",
+			Text: fmt.Sprintf("%s (host) joined chat", username),
+		}
+	} else {
+		s.broadcast <- common.Message{
+			Type: "system",
+			Text: fmt.Sprintf("%s joined chat", username),
+		}
 	}
 
 	// clean up on disconnect
@@ -116,7 +147,7 @@ func (s *Server) handleClient(conn net.Conn) {
 		s.mu.Unlock()
 		conn.Close()
 		s.broadcast <- common.Message{
-			From: "system",
+			Type: "system",
 			Text: fmt.Sprintf("%s left the chat", username),
 		}
 	}()
@@ -127,10 +158,12 @@ func (s *Server) handleClient(conn net.Conn) {
 			return
 		}
 
+		if msg.Type == "chat" {
+			s.broadcast <- msg
+		}
+
 		if msg.Text == "/exit" {
 			return
 		}
-
-		s.broadcast <- msg
 	}
 }

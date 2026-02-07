@@ -64,30 +64,38 @@ func NewClient(addr string, isHost bool) (*Client, error) {
 
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(conn)
-
+	var username string
 	// ask username in plain terminal (before TUI takes over)
-	stdin := bufio.NewScanner(os.Stdin)
-	fmt.Print("Enter your username: ")
-	stdin.Scan()
-	username := strings.TrimSpace(stdin.Text())
-	if username == "" {
-		username = "anon"
-	}
-	if isHost {
-		username = username + " (host)"
-	}
+	for {
+		stdin := bufio.NewScanner(os.Stdin)
+		fmt.Print("Enter your username: ")
+		stdin.Scan()
+		username = strings.TrimSpace(stdin.Text())
 
-	// do it for the first message "X joined the chat"
-	handshake := common.Message{
-		From: username,
-		Text: "joined the chat",
-	}
+		joinReq := common.Message{
+			Type:   "join",
+			From:   username,
+			IsHost: isHost,
+		}
 
-	if err := enc.Encode(handshake); err != nil {
-		conn.Close()
-		return nil, err
-	}
+		if err := enc.Encode(joinReq); err != nil {
+			conn.Close()
+			return nil, err
+		}
 
+		var resp common.Message
+		if err := dec.Decode(&resp); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		if resp.Type == "join-accept" {
+			break
+		}
+		if resp.Type == "join-reject" {
+			fmt.Println(resp.Text)
+			continue
+		}
+	}
 	return &Client{
 		Conn:     conn,
 		Enc:      enc,
@@ -100,6 +108,7 @@ func NewClient(addr string, isHost bool) (*Client, error) {
 // helper so TUI code can send messages easily
 func (c *Client) SendMessage(text string) error {
 	msg := common.Message{
+		Type: "chat",
 		From: c.Username,
 		Text: text,
 	}

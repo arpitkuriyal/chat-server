@@ -131,10 +131,12 @@ func (s *Server) handleClient(conn net.Conn) {
 	if client.IsHost {
 		s.broadcast <- common.Message{
 			Type: "system",
+			From: "system",
 			Text: fmt.Sprintf("%s (host) joined chat", username),
 		}
 	} else {
 		s.broadcast <- common.Message{
+			From: "system",
 			Type: "system",
 			Text: fmt.Sprintf("%s joined chat", username),
 		}
@@ -148,6 +150,7 @@ func (s *Server) handleClient(conn net.Conn) {
 		conn.Close()
 		s.broadcast <- common.Message{
 			Type: "system",
+			From: "system",
 			Text: fmt.Sprintf("%s left the chat", username),
 		}
 	}()

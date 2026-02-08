@@ -12,20 +12,25 @@ import (
 // StartTUI builds and runs the tview UI for this client.
 func StartTUI(c *Client) error {
 	app := tview.NewApplication()
-
-	// chat window
-	messages := tview.NewTextView().
+	messages := tview.NewTextView()
+	messages.
 		SetDynamicColors(true).
-		SetScrollable(true)
+		SetScrollable(true).
+		SetBorder(true)
 
 	title := " Chat-Server "
 	if c.IsHost {
 		title = " Chat-Server (HOST) "
 	}
-	messages.SetBorder(true).SetTitle(title)
+	messages.SetTitle(title)
 
-	// input box
-	input := tview.NewInputField().
+	usersView := tview.NewTextView()
+	usersView.
+		SetBorder(true).
+		SetTitle(" Active Users ")
+
+	input := tview.NewInputField()
+	input.
 		SetLabel("You: ").
 		SetFieldWidth(0)
 
@@ -39,7 +44,6 @@ func StartTUI(c *Client) error {
 			return
 		}
 
-		// exit command
 		if text == "/exit" {
 			_ = c.SendMessage(text)
 			app.Stop()
@@ -57,13 +61,15 @@ func StartTUI(c *Client) error {
 		input.SetText("")
 	})
 
-	// layout
+	chatLayout := tview.NewFlex().
+		AddItem(messages, 0, 3, false).
+		AddItem(usersView, 25, 1, false)
+
 	layout := tview.NewFlex().
 		SetDirection(tview.FlexRow).
-		AddItem(messages, 0, 1, false).
+		AddItem(chatLayout, 0, 1, false).
 		AddItem(input, 3, 0, true)
 
-	// read messages from server
 	go func() {
 		for {
 			var msg common.Message
@@ -71,17 +77,31 @@ func StartTUI(c *Client) error {
 				app.QueueUpdateDraw(func() {
 					fmt.Fprintf(messages, "\n[red]server disconnected\n")
 				})
-				app.Stop() // stop UI on disconnect
+				app.Stop()
 				return
 			}
 
 			app.QueueUpdateDraw(func() {
-				fmt.Fprintf(messages, "[yellow]%s:[white] %s\n", msg.From, msg.Text)
+				switch msg.Type {
+
+				case "user-list":
+					usersView.SetText("")
+
+					for _, u := range msg.Users {
+						if u == c.Username {
+							fmt.Fprintf(usersView, "[green]- %s (you)\n", u)
+						} else {
+							fmt.Fprintf(usersView, "- %s\n", u)
+						}
+					}
+
+				default:
+					fmt.Fprintf(messages, "[yellow]%s:[white] %s\n", msg.From, msg.Text)
+				}
 			})
 		}
 	}()
 
-	// single Run call, owns lifecycle
 	return app.SetRoot(layout, true).
 		EnableMouse(true).
 		Run()

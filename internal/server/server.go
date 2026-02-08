@@ -125,9 +125,9 @@ func (s *Server) handleClient(conn net.Conn) {
 		_ = enc.Encode(common.Message{
 			Type: "join-accept",
 		})
+		s.sendUserList()
 		break
 	}
-
 	if client.IsHost {
 		s.broadcast <- common.Message{
 			Type: "system",
@@ -148,6 +148,7 @@ func (s *Server) handleClient(conn net.Conn) {
 		delete(s.clients, username)
 		s.mu.Unlock()
 		conn.Close()
+		s.sendUserList()
 		s.broadcast <- common.Message{
 			Type: "system",
 			From: "system",
@@ -168,5 +169,24 @@ func (s *Server) handleClient(conn net.Conn) {
 		if msg.Text == "/exit" {
 			return
 		}
+	}
+}
+
+func (s *Server) sendUserList() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	users := make([]string, 0, len(s.clients))
+	for name := range s.clients {
+		users = append(users, name)
+	}
+
+	msg := common.Message{
+		Users: users,
+		Type:  "user-list",
+	}
+
+	for _, client := range s.clients {
+		_ = client.Enc.Encode(msg)
 	}
 }

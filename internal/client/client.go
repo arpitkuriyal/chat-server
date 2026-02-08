@@ -19,6 +19,7 @@ type Client struct {
 	Dec      *json.Decoder
 	Username string
 	IsHost   bool
+	Users    []string
 }
 
 // Run connects to the server, builds a Client, then hands off to the TUI.

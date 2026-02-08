@@ -9,9 +9,23 @@ import (
 	"github.com/rivo/tview"
 )
 
+// colorForUser returns a deterministic color for a username.
+func colorForUser(name string) string {
+	colors := []string{
+		"red",
+		"green",
+		"yellow",
+		"blue",
+		"magenta",
+		"cyan",
+	}
+	return colors[len(name)%len(colors)]
+}
+
 // StartTUI builds and runs the tview UI for this client.
 func StartTUI(c *Client) error {
 	app := tview.NewApplication()
+
 	messages := tview.NewTextView()
 	messages.
 		SetDynamicColors(true).
@@ -23,9 +37,9 @@ func StartTUI(c *Client) error {
 		title = " Chat-Server (HOST) "
 	}
 	messages.SetTitle(title)
-
 	usersView := tview.NewTextView()
 	usersView.
+		SetDynamicColors(true).
 		SetBorder(true).
 		SetTitle(" Active Users ")
 
@@ -85,18 +99,45 @@ func StartTUI(c *Client) error {
 				switch msg.Type {
 
 				case "user-list":
+					// Clear user list
 					usersView.SetText("")
 
 					for _, u := range msg.Users {
+						color := colorForUser(u)
+
+						if u == c.Username && c.IsHost {
+							fmt.Fprintf(
+								usersView,
+								"[yellow::b]- %s (HOST)[-]\n",
+								u,
+							)
+							continue
+						}
+
 						if u == c.Username {
-							fmt.Fprintf(usersView, "[green]- %s (you)\n", u)
+							fmt.Fprintf(
+								usersView,
+								"[%s]- %s (you)[-]\n",
+								color,
+								u,
+							)
 						} else {
-							fmt.Fprintf(usersView, "- %s\n", u)
+							fmt.Fprintf(
+								usersView,
+								"[%s]- %s[-]\n",
+								color,
+								u,
+							)
 						}
 					}
 
 				default:
-					fmt.Fprintf(messages, "[yellow]%s:[white] %s\n", msg.From, msg.Text)
+					fmt.Fprintf(
+						messages,
+						"[yellow]%s:[white] %s\n",
+						msg.From,
+						msg.Text,
+					)
 				}
 			})
 		}

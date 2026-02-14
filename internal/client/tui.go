@@ -9,7 +9,12 @@ import (
 	"github.com/rivo/tview"
 )
 
-// colorForUser returns a deterministic color for a username.
+var commands = []string{
+	"/nick",
+	"/whoami",
+	"/exit",
+}
+
 func colorForUser(name string) string {
 	colors := []string{
 		"red",
@@ -22,31 +27,54 @@ func colorForUser(name string) string {
 	return colors[len(name)%len(colors)]
 }
 
-// StartTUI builds and runs the tview UI for this client.
 func StartTUI(c *Client) error {
 	app := tview.NewApplication()
 
 	messages := tview.NewTextView()
-	messages.
-		SetDynamicColors(true).
-		SetScrollable(true).
-		SetBorder(true)
+	messages.SetDynamicColors(true)
+	messages.SetScrollable(true)
+	messages.SetBorder(true)
 
 	title := " Chat-Server "
 	if c.IsHost {
 		title = " Chat-Server (HOST) "
 	}
 	messages.SetTitle(title)
+
 	usersView := tview.NewTextView()
-	usersView.
-		SetDynamicColors(true).
-		SetBorder(true).
-		SetTitle(" Active Users ")
+	usersView.SetDynamicColors(true)
+	usersView.SetBorder(true)
+	usersView.SetTitle(" Active Users ")
 
 	input := tview.NewInputField()
-	input.
-		SetLabel("You: ").
-		SetFieldWidth(0)
+	input.SetLabel("You: ")
+	input.SetFieldWidth(0)
+
+	input.SetAutocompleteFunc(func(currentText string) []string {
+		if !strings.HasPrefix(currentText, "/") {
+			return nil
+		}
+
+		var matches []string
+		for _, cmd := range commands {
+			if strings.HasPrefix(cmd, currentText) {
+				matches = append(matches, cmd)
+			}
+		}
+
+		if len(matches) == 0 {
+			return nil
+		}
+		return matches
+	})
+
+	input.SetAutocompletedFunc(func(text string, index, source int) bool {
+		if source == tview.AutocompletedNavigate {
+			return false
+		}
+		input.SetText(text + " ")
+		return true
+	})
 
 	input.SetDoneFunc(func(key tcell.Key) {
 		if key != tcell.KeyEnter {
@@ -55,12 +83,6 @@ func StartTUI(c *Client) error {
 
 		text := strings.TrimSpace(input.GetText())
 		if text == "" {
-			return
-		}
-
-		if text == "/exit" {
-			_ = c.SendMessage(text)
-			app.Stop()
 			return
 		}
 
@@ -99,35 +121,15 @@ func StartTUI(c *Client) error {
 				switch msg.Type {
 
 				case "user-list":
-					// Clear user list
 					usersView.SetText("")
-
 					for _, u := range msg.Users {
 						color := colorForUser(u)
-
 						if u == c.Username && c.IsHost {
-							fmt.Fprintf(
-								usersView,
-								"[yellow::b]- %s (HOST)[-]\n",
-								u,
-							)
-							continue
-						}
-
-						if u == c.Username {
-							fmt.Fprintf(
-								usersView,
-								"[%s]- %s (you)[-]\n",
-								color,
-								u,
-							)
+							fmt.Fprintf(usersView, "[yellow::b]- %s (HOST)[-]\n", u)
+						} else if u == c.Username {
+							fmt.Fprintf(usersView, "[%s]- %s (you)[-]\n", color, u)
 						} else {
-							fmt.Fprintf(
-								usersView,
-								"[%s]- %s[-]\n",
-								color,
-								u,
-							)
+							fmt.Fprintf(usersView, "[%s]- %s[-]\n", color, u)
 						}
 					}
 

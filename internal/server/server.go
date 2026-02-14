@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/arpitkuriyal/chat-server/internal/common"
@@ -22,28 +23,27 @@ type Peer struct {
 	Dec      *json.Decoder
 	Username string
 	IsHost   bool
+	Send     chan common.Message
 }
 
 func NewSever() *Server {
 	return &Server{
-		broadcast: make(chan common.Message, 100), // why buffer channel
+		broadcast: make(chan common.Message, 100),
 		clients:   make(map[string]*Peer),
-		mu:        sync.Mutex{},
 	}
 }
 
 func (s *Server) RunServer(addr string, ready chan<- bool) {
-	// it loads the public certificate and private key. It prove that i am the real server.
 	cert, err := tls.LoadX509KeyPair("certs/server.crt", "certs/server.key")
 	if err != nil {
-		println("failed to load server key pair", err)
+		fmt.Println("failed to load server key pair:", err)
 		return
 	}
 
-	// store the certificate so `tls.listen()` uses it during handshake
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 	}
+
 	listen, err := tls.Listen("tcp", addr, tlsConfig)
 	if err != nil {
 		fmt.Println("Error in server main:", err)
@@ -51,34 +51,40 @@ func (s *Server) RunServer(addr string, ready chan<- bool) {
 	}
 	defer listen.Close()
 
-	fmt.Println("server is listening on port 8080")
+	fmt.Println("server is listening on", addr)
 	ready <- true
-	// when message come send to all client simaltaneously.
+
 	go s.handleBroadcast()
 
-	// accept the clients to communicate
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
-			fmt.Println("error:", err)
+			fmt.Println("accept error:", err)
 			return
 		}
 		go s.handleClient(conn)
 	}
 }
 
-// broadcast message to all cilents
 func (s *Server) handleBroadcast() {
 	for msg := range s.broadcast {
 		s.mu.Lock()
 		for _, client := range s.clients {
-			_ = client.Enc.Encode(msg)
+			select {
+			case client.Send <- msg:
+			default:
+			}
 		}
 		s.mu.Unlock()
 	}
 }
 
-// this function is call every time new client send message.
+func (p *Peer) writeLoop() {
+	for msg := range p.Send {
+		_ = p.Enc.Encode(msg)
+	}
+}
+
 func (s *Server) handleClient(conn net.Conn) {
 	dec := json.NewDecoder(conn)
 	enc := json.NewEncoder(conn)
@@ -86,7 +92,6 @@ func (s *Server) handleClient(conn net.Conn) {
 	var client *Peer
 	var username string
 
-	// retry join loop
 	for {
 		var joinReq common.Message
 		if err := dec.Decode(&joinReq); err != nil {
@@ -104,50 +109,45 @@ func (s *Server) handleClient(conn net.Conn) {
 		if _, exists := s.clients[username]; exists {
 			_ = enc.Encode(common.Message{
 				Type: "join-reject",
-				Text: "username already taken, try another",
+				Text: "username already taken",
 			})
 			s.mu.Unlock()
 			continue
 		}
 
-		// accept
 		client = &Peer{
 			Conn:     conn,
 			Enc:      enc,
 			Dec:      dec,
 			Username: username,
 			IsHost:   joinReq.IsHost,
+			Send:     make(chan common.Message, 50),
 		}
 
 		s.clients[username] = client
 		s.mu.Unlock()
 
-		_ = enc.Encode(common.Message{
-			Type: "join-accept",
-		})
+		go client.writeLoop()
+
+		client.Send <- common.Message{Type: "join-accept"}
 		s.sendUserList()
 		break
 	}
-	if client.IsHost {
-		s.broadcast <- common.Message{
-			Type: "system",
-			From: "system",
-			Text: fmt.Sprintf("%s (host) joined chat", username),
-		}
-	} else {
-		s.broadcast <- common.Message{
-			From: "system",
-			Type: "system",
-			Text: fmt.Sprintf("%s joined chat", username),
-		}
+
+	s.broadcast <- common.Message{
+		Type: "system",
+		From: "system",
+		Text: fmt.Sprintf("%s joined chat", username),
 	}
 
-	// clean up on disconnect
 	defer func() {
 		s.mu.Lock()
 		delete(s.clients, username)
 		s.mu.Unlock()
+
+		close(client.Send)
 		conn.Close()
+
 		s.sendUserList()
 		s.broadcast <- common.Message{
 			Type: "system",
@@ -162,12 +162,71 @@ func (s *Server) handleClient(conn net.Conn) {
 			return
 		}
 
+		if strings.HasPrefix(msg.Text, "/") {
+			s.handleCommand(client, &username, msg.Text)
+			continue
+		}
+
 		if msg.Type == "chat" {
 			s.broadcast <- msg
 		}
+	}
+}
 
-		if msg.Text == "/exit" {
+func (s *Server) handleCommand(p *Peer, username *string, text string) {
+	parts := strings.Fields(text)
+	if len(parts) == 0 {
+		return
+	}
+
+	switch parts[0] {
+
+	case "/exit":
+		p.Send <- common.Message{
+			Type: "system",
+			Text: "Goodbye",
+		}
+		p.Conn.Close()
+
+	case "/nick":
+		if len(parts) != 2 {
+			p.Send <- common.Message{
+				Type: "system",
+				Text: "usage: /nick <newname>",
+			}
 			return
+		}
+
+		newName := parts[1]
+
+		s.mu.Lock()
+		if _, exists := s.clients[newName]; exists {
+			s.mu.Unlock()
+			p.Send <- common.Message{
+				Type: "system",
+				Text: "username already taken",
+			}
+			return
+		}
+
+		delete(s.clients, *username)
+		s.clients[newName] = p
+		oldName := *username
+		*username = newName
+		p.Username = newName
+		s.mu.Unlock()
+
+		s.sendUserList()
+		s.broadcast <- common.Message{
+			Type: "system",
+			From: "system",
+			Text: fmt.Sprintf("%s is now known as %s", oldName, newName),
+		}
+
+	default:
+		p.Send <- common.Message{
+			Type: "system",
+			Text: "unknown command",
 		}
 	}
 }
@@ -182,11 +241,14 @@ func (s *Server) sendUserList() {
 	}
 
 	msg := common.Message{
-		Users: users,
 		Type:  "user-list",
+		Users: users,
 	}
 
 	for _, client := range s.clients {
-		_ = client.Enc.Encode(msg)
+		select {
+		case client.Send <- msg:
+		default:
+		}
 	}
 }

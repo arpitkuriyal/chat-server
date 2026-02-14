@@ -223,6 +223,12 @@ func (s *Server) handleCommand(p *Peer, username *string, text string) {
 			Text: fmt.Sprintf("%s is now known as %s", oldName, newName),
 		}
 
+	case "/whoami":
+		p.Send <- common.Message{
+			Type: "system",
+			Text: fmt.Sprintf("username=%s host=%v", p.Username, p.IsHost),
+		}
+
 	default:
 		p.Send <- common.Message{
 			Type: "system",
